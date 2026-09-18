@@ -150,11 +150,9 @@
       <div class="sub">${fmtSize(f.size)} · ${when}</div></div>
       <div class="actions">
         <button class="dl" title="Download">⬇</button>
-        <button class="view" title="Preview / open">↗</button>
         <button class="del" title="Delete">🗑</button>
       </div>`;
     row.querySelector(".dl").onclick = () => startDownload(f);
-    row.querySelector(".view").onclick = () => openFile(f.key, name);
     row.querySelector(".del").onclick = () => deleteFile(f.key, name);
     return row;
   }
@@ -235,7 +233,7 @@
     load();
   }
   $("fileInput").onchange = (e) => { uploadFiles(e.target.files); e.target.value = ""; };
-  $("mediaInput").onchange = (e) => { uploadFiles(e.target.files); e.target.value = ""; };
+  if ($("mediaInput")) $("mediaInput").onchange = (e) => { uploadFiles(e.target.files); e.target.value = ""; };
 
   // ---------- new folder ----------
   $("newFolderBtn").onclick = async () => {

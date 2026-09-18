@@ -49,10 +49,18 @@ button { font: inherit; cursor: pointer; border: none; border-radius: var(--radi
 /* ---------- top bar ---------- */
 .topbar {
   position: sticky; top: 0; z-index: 5;
-  display: flex; align-items: center; gap: 8px;
-  padding: calc(10px + var(--safe-top)) 10px 10px;
-  background: rgba(11,18,32,.92); backdrop-filter: blur(10px);
+  display: flex; flex-direction: column; gap: 6px;
+  padding: calc(14px + var(--safe-top)) 14px 14px;
+  background: rgba(11,18,32,.94); backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
+}
+.topbar-main {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  margin-bottom: 10px;
+}
+.brand-title {
+  font-size: 20px; font-weight: 700; color: var(--text);
+  letter-spacing: -0.3px; text-align: center; flex: 1;
 }
 .icon-btn {
   flex: 0 0 auto; width: 40px; height: 40px; font-size: 22px;
@@ -61,13 +69,14 @@ button { font: inherit; cursor: pointer; border: none; border-radius: var(--radi
 .crumbs {
   flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap;
   font-size: 14px; color: var(--muted); scrollbar-width: none;
+  padding: 4px 2px;
 }
 .crumbs::-webkit-scrollbar { display: none; }
 .crumbs .seg { color: var(--text); }
 .crumbs .sep { padding: 0 4px; }
 
 /* ---------- list ---------- */
-.list { flex: 1; padding: 8px 10px 90px; }
+.list { flex: 1; padding: 16px 12px 140px; }
 .row {
   display: flex; align-items: center; gap: 12px;
   padding: 12px 12px; margin-bottom: 8px;
@@ -90,7 +99,7 @@ button { font: inherit; cursor: pointer; border: none; border-radius: var(--radi
 .status.error { background: #3a1620; color: #ffb4bd; }
 
 /* ---------- uploads ---------- */
-.uploads { position: fixed; left: 10px; right: 10px; bottom: calc(76px + var(--safe-bottom)); z-index: 6; }
+.uploads { position: fixed; left: 10px; right: 10px; bottom: calc(96px + var(--safe-bottom)); z-index: 6; }
 .up-item { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-top: 8px; }
 .up-item .up-name { font-size: 13px; display: flex; justify-content: space-between; gap: 10px; }
 .up-bar { height: 6px; background: #0c1626; border-radius: 4px; margin-top: 8px; overflow: hidden; }
@@ -99,8 +108,8 @@ button { font: inherit; cursor: pointer; border: none; border-radius: var(--radi
 /* ---------- tab bar ---------- */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 7;
-  display: flex; gap: 6px; padding: 8px 8px calc(8px + var(--safe-bottom));
-  background: rgba(19,28,46,.96); backdrop-filter: blur(10px);
+  display: flex; gap: 8px; padding: 12px 12px calc(24px + var(--safe-bottom));
+  background: rgba(19,28,46,.96); backdrop-filter: blur(12px);
   border-top: 1px solid var(--border);
 }
 .tab {

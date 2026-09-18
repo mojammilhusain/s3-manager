@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
-  <title>S3 Manager</title>
+  <title>Mojammil's Storage</title>
 
   <!-- PWA / iOS home-screen app -->
   <meta name="theme-color" content="#0b1220" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="S3 Manager" />
+  <meta name="apple-mobile-web-app-title" content="Mojammil's Storage" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <link rel="icon" href="icons/icon-192.png" />
@@ -21,7 +21,7 @@
   <section id="setup" class="screen">
     <div class="setup-card">
       <div class="logo">🪣</div>
-      <h1>S3 Manager</h1>
+      <h1>Mojammil's Storage</h1>
       <p class="muted">Enter the bucket that syncs with your laptop.</p>
       <input id="bucketInput" type="text" placeholder="my-bucket-name" autocapitalize="off" autocorrect="off" spellcheck="false" />
       <button id="connectBtn" class="primary">Open bucket</button>
@@ -34,9 +34,12 @@
   <!-- ===== Main browser ===== -->
   <section id="app" class="screen hidden">
     <header class="topbar">
-      <button id="upBtn" class="icon-btn" title="Up">‹</button>
+      <div class="topbar-main">
+        <button id="upBtn" class="icon-btn" title="Up">‹</button>
+        <div class="brand-title">Mojammil's Storage</div>
+        <button id="refreshBtn" class="icon-btn" title="Refresh">↻</button>
+      </div>
       <div class="crumbs" id="crumbs"></div>
-      <button id="refreshBtn" class="icon-btn" title="Refresh">↻</button>
     </header>
 
     <div id="status" class="status hidden"></div>
@@ -50,10 +53,6 @@
       <label class="tab primary-tab">
         ⤴ Upload
         <input id="fileInput" type="file" multiple hidden />
-      </label>
-      <label class="tab">
-        📷 Photo
-        <input id="mediaInput" type="file" accept="image/*,video/*" multiple hidden />
       </label>
       <button id="downloadsBtn" class="tab">⬇ Loads<span id="dlBadge" class="badge hidden">0</span></button>
       <button id="switchBucketBtn" class="tab">🪣 Bucket</button>

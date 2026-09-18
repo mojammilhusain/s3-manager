@@ -1,6 +1,6 @@
 {
-  "name": "S3 Mobile Manager",
-  "short_name": "S3 Manager",
+  "name": "Mojammil's Storage",
+  "short_name": "Mojammil Storage",
   "description": "Upload and manage files in your S3 bucket from your iPhone.",
   "start_url": "index.html",
   "scope": "./",
