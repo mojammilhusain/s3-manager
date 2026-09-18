@@ -1,6 +1,6 @@
 // Service worker: cache the app shell so the app opens instantly / offline.
 // S3 (amazonaws.com) requests always go to the network — never cached.
-const CACHE = "s3mgr-v2";
+const CACHE = "s3mgr-v3";
 const SHELL = [
   "index.html",
   "styles.css",
