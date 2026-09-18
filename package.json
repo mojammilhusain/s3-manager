@@ -1,0 +1,13 @@
+{
+  "name": "s3-manager",
+  "version": "1.0.0",
+  "description": "S3 Mobile Manager PWA",
+  "main": "index.html",
+  "scripts": {
+    "build": "node build-config.js",
+    "start": "npx http-server -p 8000"
+  },
+  "keywords": ["s3", "pwa", "mobile", "aws"],
+  "author": "",
+  "license": "ISC"
+}

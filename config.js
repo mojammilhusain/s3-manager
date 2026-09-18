@@ -1,9 +1,6 @@
 // ============================================================
-//  S3 Mobile Manager — configuration
-//  Everything runs on-device in your browser. No server.
-//  NOTE: These credentials are embedded in the app as you asked.
-//  Recommended: use an IAM user scoped to ONLY your bucket.
-//  (see README.md -> "Least-privilege IAM policy")
+//  S3 Mobile Manager — Auto-generated configuration
+//  Generated at build time from environment variables / secrets
 // ============================================================
 window.S3_CONFIG = {
   accessKeyId: "YOUR_AWS_ACCESS_KEY_ID",
