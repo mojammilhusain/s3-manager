@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <title>S3 Manager</title>
+
+  <!-- PWA / iOS home-screen app -->
+  <meta name="theme-color" content="#0b1220" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="S3 Manager" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ===== Bucket picker (first run) ===== -->
+  <section id="setup" class="screen">
+    <div class="setup-card">
+      <div class="logo">🪣</div>
+      <h1>S3 Manager</h1>
+      <p class="muted">Enter the bucket that syncs with your laptop.</p>
+      <input id="bucketInput" type="text" placeholder="my-bucket-name" autocapitalize="off" autocorrect="off" spellcheck="false" />
+      <button id="connectBtn" class="primary">Open bucket</button>
+      <button id="listBucketsBtn" class="ghost">List my buckets</button>
+      <ul id="bucketList" class="bucket-list"></ul>
+      <p class="region muted">region: <span id="regionLabel"></span></p>
+    </div>
+  </section>
+
+  <!-- ===== Main browser ===== -->
+  <section id="app" class="screen hidden">
+    <header class="topbar">
+      <button id="upBtn" class="icon-btn" title="Up">‹</button>
+      <div class="crumbs" id="crumbs"></div>
+      <button id="refreshBtn" class="icon-btn" title="Refresh">↻</button>
+    </header>
+
+    <div id="status" class="status hidden"></div>
+
+    <main id="list" class="list"></main>
+
+    <div id="uploads" class="uploads"></div>
+
+    <nav class="tabbar">
+      <button id="newFolderBtn" class="tab">＋ Folder</button>
+      <label class="tab primary-tab">
+        ⤴ Upload
+        <input id="fileInput" type="file" multiple hidden />
+      </label>
+      <label class="tab">
+        📷 Photo
+        <input id="mediaInput" type="file" accept="image/*,video/*" multiple hidden />
+      </label>
+      <button id="downloadsBtn" class="tab">⬇ Loads<span id="dlBadge" class="badge hidden">0</span></button>
+      <button id="switchBucketBtn" class="tab">🪣 Bucket</button>
+    </nav>
+  </section>
+
+  <!-- ===== Preview overlay ===== -->
+  <div id="preview" class="preview hidden">
+    <button id="previewClose" class="preview-close">✕</button>
+    <div id="previewBody" class="preview-body"></div>
+  </div>
+
+  <!-- ===== Downloads panel ===== -->
+  <div id="downloads-sheet" class="sheet hidden">
+    <div class="sheet-head">
+      <span>⬇ Downloads</span>
+      <div>
+        <button id="clearDone" class="sheet-btn">Clear finished</button>
+        <button id="downloadsClose" class="sheet-btn">✕</button>
+      </div>
+    </div>
+    <div id="dlList" class="dl-list"></div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="aws-s3.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
