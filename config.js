@@ -1,6 +1,6 @@
 // ============================================================
 //  S3 Mobile Manager — Configuration
-//  AWS Credentials are injected at build time from environment secrets.
+//  AWS Credentials injected at build time from environment secrets.
 // ============================================================
 window.S3_CONFIG = {
   accessKeyId: "YOUR_AWS_ACCESS_KEY_ID",
