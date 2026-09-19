@@ -43,6 +43,140 @@
   }
   const hideStatus = () => $("status").classList.add("hidden");
 
+  // ========================================================
+  //  IndexedDB Engine — Streaming Chunks + Persistent State
+  // ========================================================
+  const DB_NAME = "S3ManagerDownloadsDB";
+  const DB_VERSION = 1;
+  let dbPromise = null;
+
+  function getDB() {
+    if (dbPromise) return dbPromise;
+    dbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains("tasks")) {
+          db.createObjectStore("tasks", { keyPath: "id" });
+        }
+        if (!db.objectStoreNames.contains("chunks")) {
+          db.createObjectStore("chunks", { keyPath: ["taskId", "index"] });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return dbPromise;
+  }
+
+  async function dbSaveTask(task) {
+    try {
+      const db = await getDB();
+      const tx = db.transaction("tasks", "readwrite");
+      const record = {
+        id: task.id,
+        bucket: task.bucket,
+        key: task.key,
+        name: task.name,
+        size: task.size,
+        loaded: task.loaded,
+        chunkIndex: task.chunkIndex || 0,
+        status: task.status,
+        error: task.error || "",
+        timestamp: task.timestamp || Date.now(),
+        blob: task.blob || null,
+      };
+      tx.objectStore("tasks").put(record);
+    } catch (e) {
+      console.warn("DB saveTask error:", e);
+    }
+  }
+
+  async function dbLoadTasks() {
+    try {
+      const db = await getDB();
+      const tx = db.transaction("tasks", "readonly");
+      return new Promise((resolve) => {
+        const req = tx.objectStore("tasks").getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => resolve([]);
+      });
+    } catch (e) {
+      return [];
+    }
+  }
+
+  async function dbDeleteTask(taskId) {
+    try {
+      const db = await getDB();
+      const tx = db.transaction(["tasks", "chunks"], "readwrite");
+      tx.objectStore("tasks").delete(taskId);
+      const chunksStore = tx.objectStore("chunks");
+      const range = IDBKeyRange.bound([taskId, 0], [taskId, 9999999]);
+      chunksStore.delete(range);
+    } catch (e) {
+      console.warn("DB deleteTask error:", e);
+    }
+  }
+
+  async function dbSaveChunk(taskId, index, arrayBuffer) {
+    try {
+      const db = await getDB();
+      const tx = db.transaction("chunks", "readwrite");
+      tx.objectStore("chunks").put({ taskId, index, data: arrayBuffer });
+    } catch (e) {
+      console.warn("DB saveChunk error:", e);
+    }
+  }
+
+  async function dbAssembleBlob(task, mimeType) {
+    try {
+      const db = await getDB();
+      const tx = db.transaction("chunks", "readonly");
+      const store = tx.objectStore("chunks");
+      const range = IDBKeyRange.bound([task.id, 0], [task.id, 9999999]);
+
+      const chunks = await new Promise((resolve) => {
+        const list = [];
+        const req = store.openCursor(range);
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) {
+            list.push(cursor.value.data);
+            cursor.continue();
+          } else {
+            resolve(list);
+          }
+        };
+        req.onerror = () => resolve([]);
+      });
+
+      if (chunks.length > 0) {
+        task.blob = new Blob(chunks, { type: mimeType });
+      }
+
+      // Cleanup chunks from store after assembling blob
+      const cleanupTx = db.transaction("chunks", "readwrite");
+      cleanupTx.objectStore("chunks").delete(range);
+    } catch (e) {
+      console.warn("DB assembleBlob error:", e);
+    }
+  }
+
+  async function dbGetTaskBlob(taskId) {
+    try {
+      const db = await getDB();
+      const tx = db.transaction("tasks", "readonly");
+      return new Promise((resolve) => {
+        const req = tx.objectStore("tasks").get(taskId);
+        req.onsuccess = () => resolve(req.result ? req.result.blob : null);
+        req.onerror = () => resolve(null);
+      });
+    } catch (e) {
+      return null;
+    }
+  }
+
   // ---------- setup screen ----------
   function showSetup() {
     $("app").classList.add("hidden");
@@ -149,9 +283,11 @@
       <div class="meta"><div class="name">${name}</div>
       <div class="sub">${fmtSize(f.size)} · ${when}</div></div>
       <div class="actions">
-        <button class="dl" title="Download">⬇</button>
+        <button class="direct-dl" title="Save Direct to Files">⚡</button>
+        <button class="dl" title="In-App Download">⬇</button>
         <button class="del" title="Delete">🗑</button>
       </div>`;
+    row.querySelector(".direct-dl").onclick = () => startDirectDownload(f);
     row.querySelector(".dl").onclick = () => startDownload(f);
     row.querySelector(".del").onclick = () => deleteFile(f.key, name);
     return row;
@@ -188,7 +324,6 @@
     try {
       showStatus("Deleting folder…");
       const { folders, files } = await S3.listObjects(state.bucket, prefix);
-      // delete files, the placeholder, and recurse into subfolders
       for (const f of files) await S3.deleteObject(state.bucket, f.key);
       await S3.deleteObject(state.bucket, prefix).catch(() => {});
       for (const sub of folders) await deleteFolderSilent(sub);
@@ -247,9 +382,9 @@
 
   // ========================================================
   //  Download manager — progress + pause/resume + save
-  //  Uses ranged fetch so paused downloads resume where they
-  //  left off. Finished files are saved via the iOS share
-  //  sheet (Files / Photos) or a normal browser download.
+  //  Persistent IndexedDB storage handles 500MB+ files without
+  //  memory overflow or browser tab reloads. Direct Native
+  //  Downloads save directly into device Files app.
   // ========================================================
   const downloads = [];
   let dlSeq = 0;
@@ -267,13 +402,59 @@
     return m[e] || "application/octet-stream";
   }
 
+  async function startDirectDownload(f) {
+    const name = baseName(f.key || f.name);
+    const key = f.key || f.name;
+    const url = await S3.downloadUrl(state.bucket, key, 3600, name);
+    
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.target = "_blank";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    let task = downloads.find((t) => t.key === key);
+    if (!task) {
+      task = {
+        id: "dl" + (++dlSeq),
+        bucket: state.bucket,
+        key,
+        name,
+        size: f.size || null,
+        loaded: f.size || 0,
+        status: "direct",
+        error: "",
+        timestamp: Date.now(),
+      };
+      downloads.unshift(task);
+    } else {
+      task.status = "direct";
+      task.loaded = f.size || task.loaded;
+    }
+    await dbSaveTask(task);
+    renderDownloads();
+    updateDlBadge();
+    showStatus(`Direct download started for "${name}" (saving to Files)`, "info");
+  }
+
   function startDownload(f) {
     let task = downloads.find((t) => t.key === f.key && t.status !== "error");
     if (!task) {
       task = {
-        id: "dl" + (++dlSeq), bucket: state.bucket, key: f.key,
-        name: baseName(f.key), size: f.size || null, loaded: 0, chunks: [],
-        status: "queued", controller: null, blob: null, error: "",
+        id: "dl" + (++dlSeq),
+        bucket: state.bucket,
+        key: f.key,
+        name: baseName(f.key),
+        size: f.size || null,
+        loaded: 0,
+        chunkIndex: 0,
+        status: "queued",
+        controller: null,
+        blob: null,
+        error: "",
+        timestamp: Date.now(),
       };
       downloads.unshift(task);
     }
@@ -292,6 +473,8 @@
     task.error = "";
     renderDownloads();
     updateDlBadge();
+    await dbSaveTask(task);
+
     try {
       const url = await S3.downloadUrl(task.bucket, task.key, 3600);
       task.controller = new AbortController();
@@ -299,8 +482,10 @@
       if (task.loaded > 0) headers.Range = `bytes=${task.loaded}-`;
       const res = await fetch(url, { headers, signal: task.controller.signal });
 
-      // If the server ignored our Range and sent the whole file, restart clean.
-      if (task.loaded > 0 && res.status === 200) { task.loaded = 0; task.chunks = []; }
+      if (task.loaded > 0 && res.status === 200) {
+        task.loaded = 0;
+        task.chunkIndex = 0;
+      }
       if (!(res.status === 200 || res.status === 206)) throw new Error("HTTP " + res.status);
 
       if (!task.size) {
@@ -309,25 +494,45 @@
       }
 
       const reader = res.body.getReader();
+      let chunkIndex = task.chunkIndex || 0;
+      let lastDbUpdate = Date.now();
+
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        task.chunks.push(value);
+
+        const buffer = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+        await dbSaveChunk(task.id, chunkIndex++, buffer);
+
         task.loaded += value.byteLength;
+        task.chunkIndex = chunkIndex;
         updateTaskRow(task);
+
+        const now = Date.now();
+        if (now - lastDbUpdate > 500) {
+          dbSaveTask(task);
+          lastDbUpdate = now;
+        }
       }
 
-      task.blob = new Blob(task.chunks, { type: mimeFor(task.name) });
-      task.chunks = [];
+      await dbAssembleBlob(task, mimeFor(task.name));
       task.status = "done";
       task.controller = null;
+      await dbSaveTask(task);
+
       renderDownloads();
       updateDlBadge();
     } catch (e) {
       task.controller = null;
-      if (task.status === "paused") { renderDownloads(); updateDlBadge(); return; } // intentional
+      if (task.status === "paused") {
+        await dbSaveTask(task);
+        renderDownloads();
+        updateDlBadge();
+        return;
+      }
       task.status = "error";
       task.error = (e && e.message) || "failed";
+      await dbSaveTask(task);
       renderDownloads();
       updateDlBadge();
     }
@@ -337,34 +542,46 @@
     if (task.status === "downloading") {
       task.status = "paused";
       if (task.controller) task.controller.abort();
+      dbSaveTask(task);
       renderDownloads();
       updateDlBadge();
     }
   }
+
   function resumeTask(task) {
     if (task.status === "paused" || task.status === "error") runTask(task);
   }
-  function cancelTask(task) {
+
+  async function cancelTask(task) {
     task.status = "canceled";
     if (task.controller) task.controller.abort();
-    task.chunks = [];
     task.blob = null;
     const i = downloads.indexOf(task);
     if (i >= 0) downloads.splice(i, 1);
+    await dbDeleteTask(task.id);
     renderDownloads();
     updateDlBadge();
   }
-  function removeTask(task) {
+
+  async function removeTask(task) {
     const i = downloads.indexOf(task);
     if (i >= 0) downloads.splice(i, 1);
+    await dbDeleteTask(task.id);
     renderDownloads();
     updateDlBadge();
   }
 
   async function saveTask(task) {
-    if (!task.blob) return;
-    const file = new File([task.blob], task.name, {
-      type: task.blob.type || "application/octet-stream",
+    let blob = task.blob;
+    if (!blob) {
+      blob = await dbGetTaskBlob(task.id);
+    }
+    if (!blob) {
+      startDirectDownload({ key: task.key, size: task.size, name: task.name });
+      return;
+    }
+    const file = new File([blob], task.name, {
+      type: blob.type || mimeFor(task.name),
     });
     try {
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -372,9 +589,9 @@
         return;
       }
     } catch (e) {
-      if (e && e.name === "AbortError") return; // user dismissed share sheet
+      if (e && e.name === "AbortError") return;
     }
-    const url = URL.createObjectURL(task.blob);
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = task.name;
@@ -383,12 +600,21 @@
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 15000);
   }
-  function openTask(task) {
-    if (!task.blob) return;
-    const url = URL.createObjectURL(task.blob);
-    if (/\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(task.name) || /\.(mp4|mov|m4v|webm)$/i.test(task.name)) {
+
+  async function openTask(task) {
+    let blob = task.blob;
+    if (!blob) {
+      blob = await dbGetTaskBlob(task.id);
+    }
+    if (!blob) {
+      const url = await S3.downloadUrl(task.bucket, task.key);
+      window.open(url, "_blank");
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    if (isImage(task.name) || isVideo(task.name)) {
       const body = $("previewBody");
-      body.innerHTML = /\.(mp4|mov|m4v|webm)$/i.test(task.name)
+      body.innerHTML = isVideo(task.name)
         ? `<video src="${url}" controls autoplay playsinline></video>`
         : `<img src="${url}" alt="${task.name}">`;
       $("preview").classList.remove("hidden");
@@ -400,10 +626,11 @@
 
   function statusText(task) {
     switch (task.status) {
-      case "downloading": return "Downloading…";
+      case "downloading": return "Downloading… (Saved in app DB)";
       case "paused": return "Paused — tap Resume to continue";
       case "queued": return "Queued";
-      case "done": return "Ready — tap Save";
+      case "done": return "Completed — tap Save or Open";
+      case "direct": return "Saved via Browser Native Downloads (Files)";
       case "error": return "Error: " + (task.error || "failed");
       default: return "";
     }
@@ -425,7 +652,7 @@
 
   function dlRow(task) {
     const pctText = task.size ? `${fmtSize(task.loaded)} / ${fmtSize(task.size)}` : fmtSize(task.loaded);
-    const w = task.size ? Math.min(100, Math.round((task.loaded / task.size) * 100)) : (task.status === "done" ? 100 : 0);
+    const w = task.size ? Math.min(100, Math.round((task.loaded / task.size) * 100)) : (["done", "direct"].includes(task.status) ? 100 : 0);
     const item = document.createElement("div");
     item.className = "dl-item";
     item.id = task.id;
@@ -447,18 +674,24 @@
     };
     if (task.status === "downloading") {
       btn("⏸ Pause", "", () => pauseTask(task));
+      btn("⚡ Direct", "direct", () => startDirectDownload({ key: task.key, size: task.size, name: task.name }));
       btn("✕ Cancel", "ghost", () => cancelTask(task));
     } else if (task.status === "paused") {
       btn("▶ Resume", "go", () => resumeTask(task));
+      btn("⚡ Direct", "direct", () => startDirectDownload({ key: task.key, size: task.size, name: task.name }));
       btn("✕ Cancel", "ghost", () => cancelTask(task));
     } else if (task.status === "queued") {
       btn("✕ Cancel", "ghost", () => cancelTask(task));
     } else if (task.status === "error") {
       btn("↻ Retry", "go", () => resumeTask(task));
+      btn("⚡ Direct", "direct", () => startDirectDownload({ key: task.key, size: task.size, name: task.name }));
       btn("✕ Remove", "ghost", () => cancelTask(task));
     } else if (task.status === "done") {
       btn("⬇ Save", "save", () => saveTask(task));
       btn("↗ Open", "", () => openTask(task));
+      btn("✕", "ghost", () => removeTask(task));
+    } else if (task.status === "direct") {
+      btn("⚡ Redownload", "direct", () => startDirectDownload({ key: task.key, size: task.size, name: task.name }));
       btn("✕", "ghost", () => removeTask(task));
     }
     return item;
@@ -468,7 +701,7 @@
     const list = $("dlList");
     list.innerHTML = "";
     if (!downloads.length) {
-      list.innerHTML = "<div class='empty'>No downloads yet.<br>Tap ⬇ on any file to download it here.</div>";
+      list.innerHTML = "<div class='empty'>No downloads yet.<br>Tap ⚡ for Direct Save to Files, or ⬇ for In-App download.</div>";
       return;
     }
     downloads.forEach((task) => list.appendChild(dlRow(task)));
@@ -484,9 +717,12 @@
 
   $("downloadsBtn").onclick = openDownloads;
   $("downloadsClose").onclick = closeDownloads;
-  $("clearDone").onclick = () => {
+  $("clearDone").onclick = async () => {
     for (let i = downloads.length - 1; i >= 0; i--) {
-      if (downloads[i].status === "done") downloads.splice(i, 1);
+      if (downloads[i].status === "done" || downloads[i].status === "direct") {
+        const [removed] = downloads.splice(i, 1);
+        await dbDeleteTask(removed.id);
+      }
     }
     renderDownloads();
     updateDlBadge();
@@ -503,8 +739,35 @@
   $("refreshBtn").onclick = load;
   $("switchBucketBtn").onclick = showSetup;
 
-  // ---------- boot ----------
+  // ---------- init & boot ----------
+  async function initDownloads() {
+    try {
+      const savedTasks = await dbLoadTasks();
+      downloads.length = 0;
+      let maxSeq = 0;
+
+      savedTasks.forEach((t) => {
+        const num = parseInt((t.id || "").replace(/\D/g, ""), 10);
+        if (!isNaN(num) && num > maxSeq) maxSeq = num;
+
+        if (t.status === "downloading") {
+          t.status = "paused";
+        }
+
+        downloads.push(t);
+      });
+
+      dlSeq = maxSeq;
+      renderDownloads();
+      updateDlBadge();
+    } catch (e) {
+      console.warn("initDownloads error:", e);
+    }
+  }
+
   $("regionLabel").textContent = cfg.region;
+  initDownloads();
+
   if (state.bucket) {
     $("setup").classList.add("hidden");
     $("app").classList.remove("hidden");
@@ -513,7 +776,6 @@
     showSetup();
   }
 
-  // register service worker for offline app shell / installability
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("service-worker.js").catch(() => {});
   }

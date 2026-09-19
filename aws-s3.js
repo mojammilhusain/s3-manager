@@ -139,8 +139,12 @@ const S3 = (() => {
   }
 
   // Presigned link for viewing / downloading an object.
-  function downloadUrl(bucket, key, expires = 3600) {
-    return presign("GET", { bucket, key, expires });
+  function downloadUrl(bucket, key, expires = 3600, filename = null) {
+    const query = {};
+    if (filename) {
+      query["response-content-disposition"] = `attachment; filename="${encodeURIComponent(filename)}"`;
+    }
+    return presign("GET", { bucket, key, query, expires });
   }
 
   // Upload a File/Blob with progress (uses XHR for upload events).
